@@ -1,6 +1,7 @@
 package com.nothinglondon.sdkdemo.demos.bitcoin
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
@@ -38,6 +39,8 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     private var isLongPressing = false
     private var returnToLogoJob: Job? = null
     
+    private lateinit var sharedPreferences: SharedPreferences
+    
     private val fullPriceFormat = NumberFormat.getCurrencyInstance(Locale.US).apply {
         minimumFractionDigits = 0
         maximumFractionDigits = 0
@@ -48,13 +51,30 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         glyphMatrixManager: GlyphMatrixManager
     ) {
         bgScope = CoroutineScope(Dispatchers.IO)
-        Log.d(TAG, "Service connected")
+        
+        // Initialize SharedPreferences to persist price data across reconnections
+        sharedPreferences = context.getSharedPreferences("bitcoin_demo_prefs", Context.MODE_PRIVATE)
+        
+        // Restore previous price data
+        currentPrice = sharedPreferences.getFloat("current_price", 0.0f).toDouble()
+        previousPrice = sharedPreferences.getFloat("previous_price", 0.0f).toDouble()
+        
+        Log.d(TAG, "Service connected - restored prices: current=$currentPrice, previous=$previousPrice")
         startPriceUpdates()
         displayBitcoinIcon() // Always start with logo
     }
 
     override fun performOnServiceDisconnected(context: Context) {
         Log.d(TAG, "Service disconnected")
+        
+        // Save current price data before disconnecting
+        if (::sharedPreferences.isInitialized) {
+            sharedPreferences.edit()
+                .putFloat("current_price", currentPrice.toFloat())
+                .putFloat("previous_price", previousPrice.toFloat())
+                .apply()
+        }
+        
         stopAllUpdates()
         bgScope.cancel()
     }
@@ -105,6 +125,7 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
 
     override fun onTouchPointReleased() {
         Log.d(TAG, "Touch released")
+        val wasLongPressing = isLongPressing
         isLongPressing = false
         scrollJob?.let { job ->
             if (job.isActive) {
@@ -116,8 +137,14 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
             }
         }
         
-        // Return to logo after a short delay (better UX)
-        scheduleReturnToLogo()
+        if (wasLongPressing) {
+            // If we were long pressing (showing ticker), show simple price
+            showSimplePrice()
+            scheduleReturnToLogo()
+        } else {
+            // Regular press, return to logo after delay
+            scheduleReturnToLogo()
+        }
     }
 
     private fun cancelReturnToLogo() {
@@ -183,6 +210,14 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
 
                 previousPrice = currentPrice
                 currentPrice = newPrice
+                
+                // Save updated prices to SharedPreferences
+                if (::sharedPreferences.isInitialized) {
+                    sharedPreferences.edit()
+                        .putFloat("current_price", currentPrice.toFloat())
+                        .putFloat("previous_price", previousPrice.toFloat())
+                        .apply()
+                }
                 
                 Log.d(TAG, "Price updated: $currentPrice (was $previousPrice)")
                 
