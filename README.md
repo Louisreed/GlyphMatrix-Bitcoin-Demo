@@ -118,26 +118,53 @@ delay(30L)
 
 #### 3. **Implement Professional Touch Interactions**
 
+**🏠 Logo as "Home State" Pattern:**
+
 ```kotlin
 class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
 
     override fun onTouchPointPressed() {
-        // Immediate response - show simple price
+        // Show information temporarily
+        Log.d(TAG, "Touch pressed - showing simple price temporarily")
+        cancelReturnToLogo()
         showSimplePrice()
     }
 
     override fun onTouchPointLongPress() {
         // Rich interaction - show detailed scrolling ticker
+        Log.d(TAG, "Long press detected - showing scrolling ticker")
+        isLongPressing = true
+        cancelReturnToLogo()
         showScrollingTicker()
     }
 
     override fun onTouchPointReleased() {
-        // Clean state management
+        // Return to logo after delay (better UX)
+        Log.d(TAG, "Touch released")
         isLongPressing = false
-        showSimplePrice()
+        scheduleReturnToLogo()
+    }
+
+    private fun scheduleReturnToLogo() {
+        returnToLogoJob = bgScope.launch {
+            delay(3000) // Wait 3 seconds before returning to logo
+            withContext(Dispatchers.Main) {
+                if (!isLongPressing) {
+                    displayBitcoinIcon() // Return to home state
+                }
+            }
+        }
     }
 }
 ```
+
+**✨ Improved UX Flow:**
+
+- **Home State:** Logo is persistent "screensaver" state
+- **Touch:** Temporarily shows information, returns to logo after 3 seconds
+- **Long Press:** Shows detailed ticker while pressed
+- **Release:** Returns to logo immediately
+- **Auto Updates:** Brief price flash, then back to logo
 
 #### 4. **Handle API Integration Professionally**
 
@@ -241,11 +268,21 @@ private fun formatSimplePrice(price: Double): String {
 
 ### 🎨 UI/UX Guidelines
 
-1. **Start with Logo:** Show your app's logo/icon on startup
-2. **Progressive Disclosure:** Simple view → detailed view on interaction
-3. **Smooth Animations:** Use bitmap rendering for professional quality
-4. **Consistent Timing:** 30ms delays for smooth animations
-5. **Error Handling:** Graceful fallbacks when APIs fail
+1. **Logo as Home State:** Make your logo/icon the persistent "screensaver" state
+2. **Temporary Information Display:** Show data temporarily, then return to logo
+3. **Progressive Disclosure:** Simple view → detailed view on interaction
+4. **Smooth Animations:** Use bitmap rendering for professional quality
+5. **Consistent Timing:** 30ms delays for smooth animations
+6. **Smart Return Logic:** Use delays (3 seconds) before returning to home state
+7. **Error Handling:** Graceful fallbacks when APIs fail
+
+**🏠 "Home State" Pattern Benefits:**
+
+- **Beautiful Default:** Logo is always visible as attractive screensaver
+- **Temporary Interactions:** Information appears briefly, then returns to logo
+- **Less Fatigue:** Users aren't stuck looking at text/numbers constantly
+- **Professional Feel:** Similar to high-end device displays and Apple Watch
+- **Battery Friendly:** Static logo uses less power than constant text updates
 
 ### 🔋 Always-On Display (AOD) Support
 

@@ -36,7 +36,7 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     private var currentPrice: Double = 0.0
     private var previousPrice: Double = 0.0
     private var isLongPressing = false
-    private var hasShownSimplePriceYet = false
+    private var returnToLogoJob: Job? = null
     
     private val fullPriceFormat = NumberFormat.getCurrencyInstance(Locale.US).apply {
         minimumFractionDigits = 0
@@ -50,7 +50,7 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         bgScope = CoroutineScope(Dispatchers.IO)
         Log.d(TAG, "Service connected")
         startPriceUpdates()
-        displayBitcoinIcon()
+        displayBitcoinIcon() // Always start with logo
     }
 
     override fun performOnServiceDisconnected(context: Context) {
@@ -78,18 +78,28 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 }
             }
         }
+        returnToLogoJob?.let { job ->
+            if (job.isActive) {
+                try {
+                    job.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation exceptions
+                }
+            }
+        }
         isLongPressing = false
     }
 
     override fun onTouchPointPressed() {
-        Log.d(TAG, "Touch pressed - showing simple price")
-        hasShownSimplePriceYet = true
+        Log.d(TAG, "Touch pressed - showing simple price temporarily")
+        cancelReturnToLogo()
         showSimplePrice()
     }
 
     override fun onTouchPointLongPress() {
         Log.d(TAG, "Long press detected - showing scrolling ticker")
         isLongPressing = true
+        cancelReturnToLogo()
         showScrollingTicker()
     }
 
@@ -105,7 +115,33 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 }
             }
         }
-        showSimplePrice()
+        
+        // Return to logo after a short delay (better UX)
+        scheduleReturnToLogo()
+    }
+
+    private fun cancelReturnToLogo() {
+        returnToLogoJob?.let { job ->
+            if (job.isActive) {
+                try {
+                    job.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation exceptions
+                }
+            }
+        }
+    }
+
+    private fun scheduleReturnToLogo() {
+        returnToLogoJob = bgScope.launch {
+            delay(3000) // Wait 3 seconds before returning to logo
+            withContext(Dispatchers.Main) {
+                if (!isLongPressing) {
+                    Log.d(TAG, "Returning to Bitcoin logo (home state)")
+                    displayBitcoinIcon()
+                }
+            }
+        }
     }
 
     private fun startPriceUpdates() {
@@ -150,10 +186,11 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 
                 Log.d(TAG, "Price updated: $currentPrice (was $previousPrice)")
                 
-                // Only update display if not long pressing and we've already shown simple price
-                if (!isLongPressing && hasShownSimplePriceYet) {
+                // Show brief price update, then return to logo
+                if (!isLongPressing) {
                     withContext(Dispatchers.Main) {
                         showSimplePrice()
+                        scheduleReturnToLogo()
                     }
                 }
             } else {
