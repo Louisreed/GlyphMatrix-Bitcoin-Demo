@@ -227,19 +227,22 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
             }
             
             val fullPrice = fullPriceFormat.format(currentPrice)
-            val trendText = getTrendText()
-            val changeAmount = if (previousPrice > 0) {
+            val trendIndicator = getTrendIndicator()
+            val changeInfo = if (previousPrice > 0) {
                 val change = currentPrice - previousPrice
+                val changePercent = (change / previousPrice) * 100
                 val changeStr = if (change > 0) "+${NumberFormat.getCurrencyInstance(Locale.US).format(change)}" 
                                else NumberFormat.getCurrencyInstance(Locale.US).format(change)
-                " $changeStr"
+                val percentStr = if (changePercent > 0) "+%.2f%%".format(changePercent)
+                               else "%.2f%%".format(changePercent)
+                " $changeStr ($percentStr)"
             } else {
                 ""
             }
             
-            val tickerText = "    $fullPrice $trendText$changeAmount    "
+            val tickerText = "    $fullPrice $trendIndicator$changeInfo    "
             
-            Log.d(TAG, "Showing scrolling ticker: '$tickerText'")
+            Log.d(TAG, "Showing enhanced scrolling ticker: '$tickerText'")
             
             // Convert text to bitmap for smooth scrolling
             val textBitmap = createTextBitmap(tickerText)
@@ -336,11 +339,11 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         }
     }
 
-    private fun getTrendText(): String {
+    private fun getTrendIndicator(): String {
         return when {
-            currentPrice > previousPrice -> "UP"
-            currentPrice < previousPrice -> "DOWN"
-            else -> "UP"  // Default to UP when prices are equal
+            currentPrice > previousPrice -> "▲"
+            currentPrice < previousPrice -> "▼"
+            else -> "●"  // Neutral indicator when prices are equal
         }
     }
 

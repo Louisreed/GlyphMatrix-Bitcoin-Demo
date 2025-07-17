@@ -13,7 +13,8 @@ This example project contains multiple toy demos:
 - `bitcoin` demo which shows a live Bitcoin price tracker with professional UI
   - Shows **actual Bitcoin logo** from Wikipedia at startup
   - `Touch` to display simplified price (e.g., "120K")
-  - `Long-press` for detailed scrolling ticker with full price and trend
+  - `Long-press` for enhanced scrolling ticker with full price, trend, and percentage
+  - **Rich ticker format**: `$120,654 ▲ +$1,234 (+1.63%)`
   - Real-time price updates every 30 seconds
   - Professional bitmap-based rendering for smooth animations
   - **🔋 Always-On Display (AOD) Support** - continues running when screen is off
@@ -87,6 +88,26 @@ private fun invertBitmapColors(bitmap: Bitmap): Bitmap {
 ```
 
 #### 2. **Optimize Performance with Bitmap Rendering**
+
+**💡 Enhanced Ticker with Visual Indicators:**
+
+```kotlin
+private fun getTrendIndicator(): String {
+    return when {
+        currentPrice > previousPrice -> "▲"
+        currentPrice < previousPrice -> "▼"
+        else -> "●"  // Neutral indicator when prices are equal
+    }
+}
+
+// Create rich ticker format: "$120,654 ▲ +$1,234 (+1.63%)"
+val changePercent = (change / previousPrice) * 100
+val changeStr = if (change > 0) "+${NumberFormat.getCurrencyInstance(Locale.US).format(change)}"
+               else NumberFormat.getCurrencyInstance(Locale.US).format(change)
+val percentStr = if (changePercent > 0) "+%.2f%%".format(changePercent)
+               else "%.2f%%".format(changePercent)
+val tickerText = "    $fullPrice $trendIndicator $changeStr ($percentStr)    "
+```
 
 **❌ Choppy Animations:**
 
