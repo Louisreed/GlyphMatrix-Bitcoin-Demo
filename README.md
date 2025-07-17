@@ -61,6 +61,31 @@ val bitcoinObject = GlyphMatrixObject.Builder()
 
 **Why:** The SDK is designed to work with actual images. Download real logos/icons and use `GlyphMatrixUtils.drawableToBitmap()` for professional results.
 
+**💡 Pro Tip:** For better visibility on the glyph matrix, consider inverting bitmap colors:
+
+```kotlin
+private fun invertBitmapColors(bitmap: Bitmap): Bitmap {
+    val width = bitmap.width
+    val height = bitmap.height
+    val invertedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+
+    for (x in 0 until width) {
+        for (y in 0 until height) {
+            val pixel = bitmap.getPixel(x, y)
+            val alpha = Color.alpha(pixel)
+            val red = 255 - Color.red(pixel)
+            val green = 255 - Color.green(pixel)
+            val blue = 255 - Color.blue(pixel)
+
+            val invertedPixel = Color.argb(alpha, red, green, blue)
+            invertedBitmap.setPixel(x, y, invertedPixel)
+        }
+    }
+
+    return invertedBitmap
+}
+```
+
 #### 2. **Optimize Performance with Bitmap Rendering**
 
 **❌ Choppy Animations:**
