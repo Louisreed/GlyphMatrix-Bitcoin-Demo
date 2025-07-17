@@ -329,13 +329,16 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     private fun displayBitcoinIcon() {
         glyphMatrixManager?.apply {
             try {
-                // Use the proper GlyphMatrixObject approach with the Bitcoin logo drawable
+                // Get the original Bitcoin logo bitmap
+                val originalBitmap = GlyphMatrixUtils.drawableToBitmap(
+                    ContextCompat.getDrawable(this@BitcoinDemoService, R.drawable.bitcoin_logo)
+                )
+                
+                // Invert the colors for better visibility on glyph matrix
+                val invertedBitmap = invertBitmapColors(originalBitmap)
+                
                 val bitcoinObject = GlyphMatrixObject.Builder()
-                    .setImageSource(
-                        GlyphMatrixUtils.drawableToBitmap(
-                            ContextCompat.getDrawable(this@BitcoinDemoService, R.drawable.bitcoin_logo)
-                        )
-                    )
+                    .setImageSource(invertedBitmap)
                     .setScale(100)
                     .setOrientation(0)
                     .setPosition(0, 0)
@@ -353,6 +356,27 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 setMatrixFrame(frame)
             }
         }
+    }
+
+    private fun invertBitmapColors(bitmap: Bitmap): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val invertedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                val pixel = bitmap.getPixel(x, y)
+                val alpha = Color.alpha(pixel)
+                val red = 255 - Color.red(pixel)
+                val green = 255 - Color.green(pixel)
+                val blue = 255 - Color.blue(pixel)
+                
+                val invertedPixel = Color.argb(alpha, red, green, blue)
+                invertedBitmap.setPixel(x, y, invertedPixel)
+            }
+        }
+        
+        return invertedBitmap
     }
 
     private fun convertBitmapToMatrix(bitmap: Bitmap): IntArray {
