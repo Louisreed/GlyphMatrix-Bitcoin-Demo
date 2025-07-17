@@ -4,6 +4,8 @@
 
     <!-- This permission is required to be able access the Glyph Matrix -->
     <uses-permission android:name="com.nothing.ketchum.permission.ENABLE" />
+    <!-- This permission is required for Bitcoin price API calls -->
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:allowBackup="true"
@@ -91,10 +93,33 @@
                 android:resource="@string/toy_name_glyph_button" />
             <meta-data
                 android:name="com.nothing.glyph.toy.image"
-                android:resource="@drawable/glyphbutton_numbnail" />
+                android:resource="@drawable/glyphbutton_thumbnail" />
             <meta-data
                 android:name="com.nothing.glyph.toy.summary"
                 android:resource="@string/toy_summary_glyph_button" />
+            <meta-data
+                android:name="com.nothing.glyph.toy.longpress"
+                android:value="1" />
+        </service>
+
+        <!-- Bitcoin Demo Service -->
+        <service
+            android:name=".demos.bitcoin.BitcoinDemoService"
+            android:exported="true"
+            tools:ignore="ExportedService">
+            <intent-filter>
+                <action android:name="com.nothing.glyph.TOY" />
+            </intent-filter>
+
+            <meta-data
+                android:name="com.nothing.glyph.toy.name"
+                android:resource="@string/toy_name_bitcoin" />
+            <meta-data
+                android:name="com.nothing.glyph.toy.image"
+                android:resource="@drawable/bitcoin_thumbnail" />
+            <meta-data
+                android:name="com.nothing.glyph.toy.summary"
+                android:resource="@string/toy_summary_bitcoin" />
             <meta-data
                 android:name="com.nothing.glyph.toy.longpress"
                 android:value="1" />

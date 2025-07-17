@@ -9,4 +9,7 @@
 
     <string name="toy_name_glyph_button">Glyph Button Demo</string>
     <string name="toy_summary_glyph_button">Activates the glyph matrix when the glyph button is pressed.</string>
+
+    <string name="toy_name_bitcoin">Bitcoin Price</string>
+    <string name="toy_summary_bitcoin">Interactive Bitcoin tracker with live price, trend analysis, and logo display. Touch for price, long press for detailed info.</string>
 </resources>
