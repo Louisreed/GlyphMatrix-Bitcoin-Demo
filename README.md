@@ -16,6 +16,7 @@ This example project contains multiple toy demos:
   - `Long-press` for detailed scrolling ticker with full price and trend
   - Real-time price updates every 30 seconds
   - Professional bitmap-based rendering for smooth animations
+  - **🔋 Always-On Display (AOD) Support** - continues running when screen is off
 
 After going through the `Setup` stage in this document the demo project can be run on the device.
 
@@ -221,6 +222,32 @@ private fun formatSimplePrice(price: Double): String {
 4. **Consistent Timing:** 30ms delays for smooth animations
 5. **Error Handling:** Graceful fallbacks when APIs fail
 
+### 🔋 Always-On Display (AOD) Support
+
+Enable your toy to run continuously even when the phone screen is off:
+
+```xml
+<!-- Enable AOD Support -->
+<meta-data
+    android:name="com.nothing.glyph.toy.aod_support"
+    android:value="1" />
+```
+
+**AOD Best Practices:**
+
+- **Battery Optimization:** Use longer update intervals for background operation
+- **Simplified UI:** Reduce complex animations to preserve battery
+- **Smart Updates:** Only update display when data changes significantly
+- **User Control:** Allow users to disable AOD if needed
+- **Efficient Timing:** Use optimized delay intervals for continuous operation
+
+**Perfect AOD Use Cases:**
+
+- **Financial Trackers:** Bitcoin, stocks, forex prices
+- **Weather Displays:** Temperature, conditions, alerts
+- **Status Monitors:** Server uptime, system health
+- **Time Displays:** Clocks, countdowns, timers
+
 ### 🔧 AndroidManifest.xml Configuration
 
 ```xml
@@ -243,6 +270,10 @@ private fun formatSimplePrice(price: Double): String {
         android:resource="@string/toy_summary_bitcoin" />
     <meta-data
         android:name="com.nothing.glyph.toy.longpress"
+        android:value="1" />
+    <!-- Enable Always-On Display support -->
+    <meta-data
+        android:name="com.nothing.glyph.toy.aod_support"
         android:value="1" />
 </service>
 ```
