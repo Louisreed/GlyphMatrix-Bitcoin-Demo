@@ -27,6 +27,8 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.text.NumberFormat
 import java.util.Locale
+import kotlin.math.sin
+import kotlin.math.abs
 
 class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     private val TAG = "BitcoinDemo"
@@ -38,6 +40,9 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     private var previousPrice: Double = 0.0
     private var isLongPressing = false
     private var returnToLogoJob: Job? = null
+    private var logoFadeJob: Job? = null
+    private var shimmerJob: Job? = null
+    private var isInitialStartup = true
     
     private lateinit var sharedPreferences: SharedPreferences
     
@@ -52,6 +57,9 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     ) {
         bgScope = CoroutineScope(Dispatchers.IO)
         
+        // Reset startup flag for new connection
+        isInitialStartup = true
+        
         // Initialize SharedPreferences to persist price data across reconnections
         sharedPreferences = context.getSharedPreferences("bitcoin_demo_prefs", Context.MODE_PRIVATE)
         
@@ -60,8 +68,22 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         previousPrice = sharedPreferences.getFloat("previous_price", 0.0f).toDouble()
         
         Log.d(TAG, "Service connected - restored prices: current=$currentPrice, previous=$previousPrice")
-        startPriceUpdates()
-        displayBitcoinIcon() // Always start with logo
+        
+        // Show logo immediately on startup (no fade-in delay)
+        displayStaticBitcoinIcon()
+        
+        // Start shimmer animation immediately after showing the logo
+        bgScope.launch {
+            delay(100) // Small delay to ensure logo is displayed
+            isInitialStartup = false // Allow price updates
+            startShimmerAnimation()
+        }
+        
+        // Start price updates after a delay to let the initial setup complete
+        bgScope.launch {
+            delay(2000) // Wait 2 seconds before starting price updates
+            startPriceUpdates()
+        }
     }
 
     override fun performOnServiceDisconnected(context: Context) {
@@ -107,19 +129,41 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 }
             }
         }
+        logoFadeJob?.let { job ->
+            if (job.isActive) {
+                try {
+                    job.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation exceptions
+                }
+            }
+        }
+        shimmerJob?.let { job ->
+            if (job.isActive) {
+                try {
+                    job.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation exceptions
+                }
+            }
+        }
         isLongPressing = false
     }
 
     override fun onTouchPointPressed() {
         Log.d(TAG, "Touch pressed - showing simple price temporarily")
         cancelReturnToLogo()
-        showSimplePrice()
+        startLogoFadeOut({
+            showSimplePrice()
+        })
     }
 
     override fun onTouchPointLongPress() {
-        Log.d(TAG, "Long press detected - showing scrolling ticker")
+        Log.d(TAG, "Long press detected - showing scrolling ticker immediately")
         isLongPressing = true
         cancelReturnToLogo()
+        
+        // Start ticker immediately without any fade out delay
         showScrollingTicker()
     }
 
@@ -157,15 +201,33 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 }
             }
         }
+        logoFadeJob?.let { job ->
+            if (job.isActive) {
+                try {
+                    job.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation exceptions
+                }
+            }
+        }
+        shimmerJob?.let { job ->
+            if (job.isActive) {
+                try {
+                    job.cancel()
+                } catch (e: Exception) {
+                    // Ignore cancellation exceptions
+                }
+            }
+        }
     }
 
     private fun scheduleReturnToLogo() {
         returnToLogoJob = bgScope.launch {
-            delay(3000) // Wait 3 seconds before returning to logo
+            delay(5000) // Wait 5 seconds before returning to logo
             withContext(Dispatchers.Main) {
                 if (!isLongPressing) {
                     Log.d(TAG, "Returning to Bitcoin logo (home state)")
-                    displayBitcoinIcon()
+                    displayBitcoinIcon() // This already calls startLogoFadeIn()
                 }
             }
         }
@@ -221,11 +283,13 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 
                 Log.d(TAG, "Price updated: $currentPrice (was $previousPrice)")
                 
-                // Show brief price update, then return to logo
-                if (!isLongPressing) {
+                // Show brief price update, then return to logo (but not during initial startup)
+                if (!isLongPressing && !isInitialStartup) {
                     withContext(Dispatchers.Main) {
-                        showSimplePrice()
-                        scheduleReturnToLogo()
+                        startLogoFadeOut({
+                            showSimplePrice()
+                            scheduleReturnToLogo()
+                        })
                     }
                 }
             } else {
@@ -248,7 +312,7 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         val simplePrice = formatSimplePrice(currentPrice)
         
         Log.d(TAG, "Showing simple price: '$simplePrice'")
-        displayBitmapText(simplePrice)
+        displaySimplePriceText(simplePrice)
     }
 
     private fun showScrollingTicker() {
@@ -288,6 +352,11 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 return@launch
             }
             
+            // Show the first frame immediately to eliminate gap
+            withContext(Dispatchers.Main) {
+                glyphMatrixManager?.setMatrixFrame(generateScrollFrame(textBitmap, 0.0))
+            }
+            
             // Use mathematical precision scrolling like animation demo
             var scrollPosition = 0.0
             val scrollSpeed = 1.0 // Pixels per frame
@@ -295,17 +364,18 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
             
             while (isLongPressing) {
                 try {
-                    val frame = generateScrollFrame(textBitmap, scrollPosition)
-                    withContext(Dispatchers.Main) {
-                        glyphMatrixManager?.setMatrixFrame(frame)
-                    }
-                    
-                    delay(frameDelay) // Consistent 30ms timing like animation demo
+                    delay(frameDelay) // Delay first to avoid double-rendering first frame
                     
                     scrollPosition += scrollSpeed
                     if (scrollPosition >= textBitmap.width) {
                         scrollPosition = 0.0 // Reset to beginning
                     }
+                    
+                    val frame = generateScrollFrame(textBitmap, scrollPosition)
+                    withContext(Dispatchers.Main) {
+                        glyphMatrixManager?.setMatrixFrame(frame)
+                    }
+                    
                 } catch (e: kotlinx.coroutines.CancellationException) {
                     // Expected when touch is released - exit gracefully
                     break
@@ -385,7 +455,7 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
     private fun displayBitmapText(text: String) {
         glyphMatrixManager?.apply {
             try {
-                val textBitmap = createTextBitmap(text, 12f) // Smaller text size for simple price
+                val textBitmap = createTextBitmap(text)
                 if (textBitmap != null) {
                     val frame = convertBitmapToMatrix(textBitmap)
                     setMatrixFrame(frame)
@@ -400,8 +470,48 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
             }
         }
     }
+    
+    private fun displaySimplePriceText(text: String) {
+        glyphMatrixManager?.apply {
+            try {
+                val paint = Paint().apply {
+                    color = Color.WHITE
+                    textSize = 12f // Smaller font to fit within matrix
+                    typeface = Typeface.MONOSPACE
+                    isAntiAlias = true
+                    letterSpacing = -0.15f // Even tighter spacing
+                }
+                
+                val textWidth = paint.measureText(text).toInt()
+                val textHeight = 25 // Matrix height
+                
+                // Ensure bitmap fits within matrix constraints
+                val maxWidth = 25
+                val actualWidth = minOf(textWidth + 4, maxWidth)
+                val bitmap = Bitmap.createBitmap(actualWidth, textHeight, Bitmap.Config.ARGB_8888)
+                val canvas = Canvas(bitmap)
+                
+                // Center the text horizontally within the constrained width
+                val startX = (actualWidth - textWidth) / 2f
+                canvas.drawText(text, startX, 16f, paint) // Adjusted y-position for smaller font
+                
+                val frame = convertBitmapToMatrix(bitmap)
+                setMatrixFrame(frame)
+            } catch (e: Exception) {
+                Log.e(TAG, "Error displaying simple price text: $text", e)
+                // Fallback to simple pattern
+                val frame = IntArray(25 * 25) { 0 }
+                setMatrixFrame(frame)
+            }
+        }
+    }
 
     private fun displayBitcoinIcon() {
+        // Start the fade-in entrance transition
+        startLogoFadeIn()
+    }
+    
+    private fun displayStaticBitcoinIcon() {
         glyphMatrixManager?.apply {
             try {
                 // Get the original Bitcoin logo bitmap
@@ -410,25 +520,134 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
                 )
                 
                 // Invert the colors for better visibility on glyph matrix
-                val invertedBitmap = invertBitmapColors(originalBitmap)
+                val baseBitmap = invertBitmapColors(originalBitmap)
                 
-                val bitcoinObject = GlyphMatrixObject.Builder()
-                    .setImageSource(invertedBitmap)
-                    .setScale(100)
-                    .setOrientation(0)
-                    .setPosition(0, 0)
-                    .build()
-
-                val frame = GlyphMatrixFrame.Builder()
-                    .addTop(bitcoinObject)
-                    .build(applicationContext)
-
-                setMatrixFrame(frame.render())
+                // Convert to IntArray frame like other demos
+                val frame = convertBitmapToMatrix(baseBitmap)
+                setMatrixFrame(frame)
             } catch (e: Exception) {
-                Log.e(TAG, "Error displaying Bitcoin icon", e)
+                Log.e(TAG, "Error displaying static Bitcoin icon", e)
                 // Fallback to simple pattern
                 val frame = IntArray(25 * 25) { 0 }
                 setMatrixFrame(frame)
+            }
+        }
+    }
+    
+    private fun startLogoFadeIn() {
+        logoFadeJob = bgScope.launch {
+            try {
+                // Get the original Bitcoin logo bitmap
+                val originalBitmap = GlyphMatrixUtils.drawableToBitmap(
+                    ContextCompat.getDrawable(this@BitcoinDemoService, R.drawable.bitcoin_logo)
+                )
+                
+                // Invert the colors for better visibility on glyph matrix
+                val baseBitmap = invertBitmapColors(originalBitmap)
+                
+                Log.d(TAG, "Starting Bitcoin logo fade-in transition")
+                
+                val fadeSteps = 20 // Number of steps for the fade
+                val frameDelay = 30L // 30ms = 33 FPS like other animations
+                
+                // Fade in from 0% to 100%
+                for (step in 0..fadeSteps) {
+                    try {
+                        val brightness = step.toFloat() / fadeSteps.toFloat()
+                        
+                        // Apply brightness to the bitmap and convert to IntArray
+                        val fadedBitmap = adjustBitmapBrightness(baseBitmap, brightness)
+                        val frame = convertBitmapToMatrix(fadedBitmap)
+                        
+                        // Display the frame directly
+                        withContext(Dispatchers.Main) {
+                            glyphMatrixManager?.setMatrixFrame(frame)
+                        }
+                        
+                        delay(frameDelay)
+                        
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        // Expected when animation is cancelled - exit gracefully
+                        break
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in fade-in frame", e)
+                        break
+                    }
+                }
+                
+                // After fade-in is complete, start shimmer animation
+                Log.d(TAG, "Bitcoin logo fade-in complete, starting shimmer animation")
+                
+                // Start the shimmer effect
+                startShimmerAnimation()
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting Bitcoin logo fade-in", e)
+                // Fallback to simple pattern
+                withContext(Dispatchers.Main) {
+                    glyphMatrixManager?.apply {
+                        val frame = IntArray(25 * 25) { 0 }
+                        setMatrixFrame(frame)
+                    }
+                }
+            }
+        }
+    }
+    
+    private fun startLogoFadeOut(onComplete: () -> Unit, fastFade: Boolean = false) {
+        logoFadeJob = bgScope.launch {
+            try {
+                // Get the original Bitcoin logo bitmap
+                val originalBitmap = GlyphMatrixUtils.drawableToBitmap(
+                    ContextCompat.getDrawable(this@BitcoinDemoService, R.drawable.bitcoin_logo)
+                )
+                
+                // Invert the colors for better visibility on glyph matrix
+                val baseBitmap = invertBitmapColors(originalBitmap)
+                
+                Log.d(TAG, "Starting Bitcoin logo fade-out transition")
+                
+                // Use faster fade for long press interactions
+                val fadeSteps = if (fastFade) 8 else 15 // Much faster for long press
+                val frameDelay = if (fastFade) 20L else 30L // Even faster frame rate for long press
+                
+                // Fade out from 100% to 0%
+                for (step in fadeSteps downTo 0) {
+                    try {
+                        val brightness = step.toFloat() / fadeSteps.toFloat()
+                        
+                        // Apply brightness to the bitmap and convert to IntArray
+                        val fadedBitmap = adjustBitmapBrightness(baseBitmap, brightness)
+                        val frame = convertBitmapToMatrix(fadedBitmap)
+                        
+                        // Display the frame directly
+                        withContext(Dispatchers.Main) {
+                            glyphMatrixManager?.setMatrixFrame(frame)
+                        }
+                        
+                        delay(frameDelay)
+                        
+                    } catch (e: kotlinx.coroutines.CancellationException) {
+                        // Expected when animation is cancelled - exit gracefully
+                        break
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Error in fade-out frame", e)
+                        break
+                    }
+                }
+                
+                // After fade-out is complete, call the completion callback immediately
+                Log.d(TAG, "Bitcoin logo fade-out complete")
+                withContext(Dispatchers.Main) {
+                    onComplete()
+                }
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting Bitcoin logo fade-out", e)
+                // On error, still call the completion callback
+                withContext(Dispatchers.Main) {
+                    onComplete()
+                }
             }
         }
     }
@@ -453,23 +672,152 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         
         return invertedBitmap
     }
-
-    private fun convertBitmapToMatrix(bitmap: Bitmap): IntArray {
+    
+    private fun adjustBitmapBrightness(bitmap: Bitmap, brightness: Float): Bitmap {
+        val width = bitmap.width
+        val height = bitmap.height
+        val adjustedBitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        
+        // Clamp brightness between 0.0 and 1.0
+        val clampedBrightness = brightness.coerceIn(0.0f, 1.0f)
+        
+        for (x in 0 until width) {
+            for (y in 0 until height) {
+                val pixel = bitmap.getPixel(x, y)
+                val alpha = Color.alpha(pixel)
+                val red = (Color.red(pixel) * clampedBrightness).toInt()
+                val green = (Color.green(pixel) * clampedBrightness).toInt()
+                val blue = (Color.blue(pixel) * clampedBrightness).toInt()
+                
+                val adjustedPixel = Color.argb(alpha, red, green, blue)
+                adjustedBitmap.setPixel(x, y, adjustedPixel)
+            }
+        }
+        
+        return adjustedBitmap
+    }
+    
+    private fun createShimmerFrame(baseBitmap: Bitmap, shimmerPosition: Float): IntArray {
         val matrixWidth = 25
         val matrixHeight = 25
         val frame = IntArray(matrixWidth * matrixHeight)
         
-        // Center the bitmap on the matrix
-        val startX = (matrixWidth - bitmap.width) / 2
-        val startY = (matrixHeight - bitmap.height) / 2
+        // Create a diagonal shimmer line
+        val shimmerWidth = 4f // Width of the shimmer line
+        val shimmerIntensity = 1.5f // How bright the shimmer is
+        
+        // Scale bitmap to fit within matrix while maintaining aspect ratio
+        val scaledBitmap = scaleAndCenterBitmap(baseBitmap, matrixWidth, matrixHeight)
+        
+        // Convert bitmap to matrix, similar to convertBitmapToMatrix but with shimmer
+        val startX = (matrixWidth - scaledBitmap.width) / 2
+        val startY = (matrixHeight - scaledBitmap.height) / 2
         
         for (y in 0 until matrixHeight) {
             for (x in 0 until matrixWidth) {
                 val sourceX = x - startX
                 val sourceY = y - startY
                 
-                if (sourceX >= 0 && sourceX < bitmap.width && sourceY >= 0 && sourceY < bitmap.height) {
-                    val pixel = bitmap.getPixel(sourceX, sourceY)
+                var brightness = 0
+                
+                if (sourceX >= 0 && sourceX < scaledBitmap.width && sourceY >= 0 && sourceY < scaledBitmap.height) {
+                    val pixel = scaledBitmap.getPixel(sourceX, sourceY)
+                    val baseBrightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
+                    
+                    // Calculate distance from diagonal shimmer line
+                    val diagonalPos = (x + y).toFloat() - shimmerPosition
+                    val shimmerDistance = abs(diagonalPos)
+                    
+                    // Apply shimmer effect if within shimmer width
+                    val shimmerEffect = if (shimmerDistance <= shimmerWidth) {
+                        val shimmerStrength = (shimmerWidth - shimmerDistance) / shimmerWidth
+                        1.0f + (shimmerIntensity - 1.0f) * shimmerStrength
+                    } else {
+                        1.0f
+                    }
+                    
+                    brightness = (baseBrightness * shimmerEffect).toInt().coerceAtMost(255)
+                }
+                
+                frame[y * matrixWidth + x] = brightness
+            }
+        }
+        
+        return frame
+    }
+    
+    private fun startShimmerAnimation() {
+        shimmerJob = bgScope.launch {
+            try {
+                // Get the original Bitcoin logo bitmap
+                val originalBitmap = GlyphMatrixUtils.drawableToBitmap(
+                    ContextCompat.getDrawable(this@BitcoinDemoService, R.drawable.bitcoin_logo)
+                )
+                
+                // Invert the colors for better visibility on glyph matrix
+                val baseBitmap = invertBitmapColors(originalBitmap)
+                
+                Log.d(TAG, "Starting Bitcoin logo shimmer animation")
+                
+                val frameDelay = 50L // Slower shimmer animation (20 FPS)
+                val shimmerSpeed = 2.0f // Pixels per frame
+                val totalDistance = 50f // Total shimmer sweep distance
+                
+                while (true) {
+                    var shimmerPosition = -totalDistance * 0.5f // Start off-screen
+                    
+                    // Shimmer sweep across the logo
+                    while (shimmerPosition < totalDistance * 1.5f) {
+                        try {
+                            val shimmerFrame = createShimmerFrame(baseBitmap, shimmerPosition)
+                            
+                            // Display the frame directly like animation demo
+                            withContext(Dispatchers.Main) {
+                                glyphMatrixManager?.setMatrixFrame(shimmerFrame)
+                            }
+                            
+                            delay(frameDelay)
+                            shimmerPosition += shimmerSpeed
+                            
+                        } catch (e: kotlinx.coroutines.CancellationException) {
+                            // Expected when animation is cancelled - exit gracefully
+                            return@launch
+                        } catch (e: Exception) {
+                            Log.e(TAG, "Error in shimmer animation frame", e)
+                            return@launch
+                        }
+                    }
+                    
+                    // Wait before next shimmer cycle
+                    delay(2000) // 2 second pause between shimmers
+                    
+                } 
+                
+            } catch (e: Exception) {
+                Log.e(TAG, "Error starting Bitcoin logo shimmer animation", e)
+            }
+        }
+    }
+
+    private fun convertBitmapToMatrix(bitmap: Bitmap): IntArray {
+        val matrixWidth = 25
+        val matrixHeight = 25
+        val frame = IntArray(matrixWidth * matrixHeight)
+        
+        // Scale bitmap to fit within matrix while maintaining aspect ratio
+        val scaledBitmap = scaleAndCenterBitmap(bitmap, matrixWidth, matrixHeight)
+        
+        // Center the scaled bitmap on the matrix
+        val startX = (matrixWidth - scaledBitmap.width) / 2
+        val startY = (matrixHeight - scaledBitmap.height) / 2
+        
+        for (y in 0 until matrixHeight) {
+            for (x in 0 until matrixWidth) {
+                val sourceX = x - startX
+                val sourceY = y - startY
+                
+                if (sourceX >= 0 && sourceX < scaledBitmap.width && sourceY >= 0 && sourceY < scaledBitmap.height) {
+                    val pixel = scaledBitmap.getPixel(sourceX, sourceY)
                     val brightness = (Color.red(pixel) + Color.green(pixel) + Color.blue(pixel)) / 3
                     frame[y * matrixWidth + x] = if (brightness > 128) 255 else 0
                 }
@@ -477,6 +825,22 @@ class BitcoinDemoService : GlyphMatrixService("Bitcoin-Demo") {
         }
         
         return frame
+    }
+    
+    private fun scaleAndCenterBitmap(bitmap: Bitmap, maxWidth: Int, maxHeight: Int): Bitmap {
+        val originalWidth = bitmap.width
+        val originalHeight = bitmap.height
+        
+        // Calculate scale factor to fit within bounds while maintaining aspect ratio
+        val scale = minOf(
+            maxWidth.toFloat() / originalWidth,
+            maxHeight.toFloat() / originalHeight
+        )
+        
+        val scaledWidth = (originalWidth * scale).toInt()
+        val scaledHeight = (originalHeight * scale).toInt()
+        
+        return Bitmap.createScaledBitmap(bitmap, scaledWidth, scaledHeight, true)
     }
 
 } 
